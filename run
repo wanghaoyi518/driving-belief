@@ -1,23 +1,43 @@
 #!/usr/bin/env python
 import sys
 import theano as th
-
-th.config.optimizer_verbose = True
-th.config.allow_gc = False
-#th.config.mode = 'fast_compile'
-
+import numpy as np  # Fix the import statement
 
 if __name__ == '__main__':
     name = sys.argv[1]
-    if len(sys.argv)>2 and sys.argv[2]=='fast':
-        th.config.optimizer = 'fast_compile'
-    if len(sys.argv)>2 and sys.argv[2]=='FAST':
-        #th.config.optimizer = 'fast_compile'
-        th.config.mode = 'FAST_COMPILE'
-    import visualize
     import world
-    world = getattr(world, name)()
-    vis = visualize.Visualizer(0.5, name=name)
-    vis.use_world(world)
-    vis.main_car = world.cars[0]
-    vis.run()
+    
+    print(f"Creating world instance: {name}")
+    world_instance = getattr(world, name)()
+    
+    # Verify world setup
+    print(f"Number of cars: {len(world_instance.cars)}")
+    print("Initial positions:")
+    for i, car in enumerate(world_instance.cars):
+        print(f"Car {i}: ({car.x[0]:.3f}, {car.x[1]:.3f})")
+    
+    n_steps = 50
+    print(f"\nRunning simulation for {n_steps} steps...")
+    
+    for i in range(n_steps):
+        print(f"\nStep {i+1}/{n_steps}")
+        # Move each car
+        for car in world_instance.cars:
+            car.move()
+        
+        # Print current positions every 10 steps
+        if i % 10 == 0:
+            print("\nCurrent positions:")
+            for j, car in enumerate(world_instance.cars):
+                print(f"Car {j}: ({car.x[0]:.3f}, {car.x[1]:.3f})")
+            print(f"Position history lengths - Human: {len(world_instance.position_history[0])}, Robot: {len(world_instance.position_history[1])}")
+    
+    # Verify final data
+    print("\nFinal positions:")
+    for i, car in enumerate(world_instance.cars):
+        print(f"Car {i}: ({car.x[0]:.3f}, {car.x[1]:.3f})")
+    print(f"Human positions recorded: {len(world_instance.position_history[0])}")
+    print(f"Robot positions recorded: {len(world_instance.position_history[1])}")
+    
+    # Plot trajectories
+    world_instance.plot_trajectories()

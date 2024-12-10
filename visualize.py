@@ -57,6 +57,7 @@ class Visualizer(object):
             x=30, y=self.window.height-30,
             anchor_x='left', anchor_y='top'
         )
+        self.show_trajectories = True # Add flag to toggle trajectory display
         def centered_image(filename):
             img = pyglet.resource.image(filename)
             img.anchor_x = img.width/2.
@@ -237,6 +238,22 @@ class Visualizer(object):
         sprite.x, sprite.y = obj.x[0], obj.x[1]
         sprite.rotation = obj.x[2] if len(obj.x)>=3 else 0.
         sprite.draw()
+    def draw_trajectory(self, positions, color):
+        """Draw trajectory line from position history"""
+        if len(positions) < 2:
+            return
+            
+        gl.glColor4f(*color)
+        gl.glLineWidth(2.0)
+        
+        vertices = []
+        for pos in positions:
+            vertices.extend([pos[0], pos[1]])
+            
+        graphics.draw(len(positions), gl.GL_LINE_STRIP,
+            ('v2f', vertices)
+        )
+        gl.glLineWidth(1.0)
     def on_draw(self):
         self.window.clear()
         gl.glMatrixMode(gl.GL_PROJECTION)
@@ -258,6 +275,13 @@ class Visualizer(object):
             self.draw_lane_lines(lane)
         for obj in self.objects:
             self.draw_object(obj)
+        # Draw trajectories before cars
+        if self.show_trajectories:
+            if hasattr(self.cars[0], 'world'):
+                # Draw human trajectory (red)
+                self.draw_trajectory(self.cars[0].world.position_history[0], (1.0, 0.0, 0.0, 0.5))
+                # Draw robot trajectory (yellow) 
+                self.draw_trajectory(self.cars[0].world.position_history[1], (1.0, 1.0, 0.0, 0.5))
         for car in self.cars:
             if car!=self.main_car and car not in self.visible_cars:
                 self.draw_car(self.anim_x[car], car.color)

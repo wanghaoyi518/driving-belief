@@ -10,7 +10,10 @@ import theano as th
 import theano.tensor as tt
 import numpy as np
 import pickle
+import matplotlib.pyplot as plt  # Add at top with other imports
 from car import Car
+import os  # Add at top with other imports
+import time  # Add at top with other imports
 
 class Object(object):
     def __init__(self, name, x):
@@ -24,6 +27,45 @@ class World(object):
         self.roads = []
         self.fences = []
         self.objects = []
+        self.position_history = {0: [], 1: []}  # Initialize empty lists for human and robot positions
+        print("World initialized with empty position history")
+
+    def plot_trajectories(self):
+        """Plot the trajectories of human and robot cars"""
+        # Create trajectory_plots directory if it doesn't exist
+        plot_dir = "trajectory_plots"
+        if not os.path.exists(plot_dir):
+            os.makedirs(plot_dir)
+            
+        plt.figure(figsize=(8, 8))
+        
+        # Plot human trajectory in red
+        human_pos = np.array(self.position_history[0])
+        if len(human_pos) > 0:
+            plt.plot(human_pos[:, 0], human_pos[:, 1], 'r-', label='Human', linewidth=2)
+            
+        # Plot robot trajectory in yellow
+        robot_pos = np.array(self.position_history[1]) 
+        if len(robot_pos) > 0:
+            plt.plot(robot_pos[:, 0], robot_pos[:, 1], 'y-', label='Robot', linewidth=2)
+            
+        # Plot lanes
+        for lane in self.lanes:
+            plt.plot([lane.p[0], lane.q[0]], [lane.p[1], lane.q[1]], 'k--', alpha=0.5)
+            
+        plt.xlabel('X Position')
+        plt.ylabel('Y Position')
+        plt.title('Vehicle Trajectories')
+        plt.legend()
+        plt.grid(True)
+        plt.axis('equal')
+        
+        # Save plot with timestamp
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        filename = f"trajectory_plots/trajectory_{timestamp}.png"
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        plt.close()  # Close the figure to free memory
+
     def features(self, theta, exclude_cars=[], traj='linear'):
         if isinstance(exclude_cars, Car):
             exclude_cars = [exclude_cars]
@@ -43,6 +85,8 @@ theta_distracted = [1., -50., 10., 100., 10., -20.]
 theta_attentive  = [1., -50., 10., 100., 10., -70.]
 theta_distracted1= [1., -50., 10., 100., 1., 0.]
 theta_distracted2= [1., -50., 10., 100., 10., -10.]
+theta_intrusive  = [1., -20., 10., 100., 10., -30.]  # Allows more lane deviation
+theta_passive    = [1., -70., 10., 100., 10., -50.]  # Strongly prefers lane center
 
 theta0 = [1., -50., 10., 100., 10., -30.]
 theta1 = [1., -50., 10., 100., 10., -70.]
@@ -61,6 +105,11 @@ def world0(active=True, theta_explore=100., theta_exploit=1.):
     world = highway()
     world.cars.append(car.SimpleOptimizerCar(dyn, [-0.13, 0., math.pi/2., 1.], color='red', T=T))
     world.cars.append(car.BeliefOptimizerCar(dyn, [0.0, 0.2, math.pi/2., .8], color='yellow', T=T))
+    
+    # Set world reference in cars
+    for c in world.cars:
+        c.world = world
+        
     world.cars[1].human = world.cars[0]
     world.cars[0].reward = world.features(theta_attentive, world.cars[0], 'linear')
     world.cars[1].add_model(lambda traj: world.features(theta_attentive, world.cars[0], traj))
@@ -111,29 +160,65 @@ def world1(active=True, model='human'):
     T = 5
     dyn = dynamics.CarDynamics(0.1)
     world = highway()
+    
+    # Initialize position history
+    world.position_history = {0: [], 1: []}
+    
+    # Create cars with different lateral positions
     if model=='human':
         world.cars.append(car.UserControlledCar(dyn, [-0.13, 0., math.pi/2., 1.], color='red', T=T))
     else:
-        world.cars.append(car.SimpleOptimizerCar(dyn, [-0.13, 0., math.pi/2., 1.], color='red', T=T))
-    world.cars.append(car.BeliefOptimizerCar(dyn, [0.0, 0.1, math.pi/2., .8], color='yellow', T=T))
+        # Create SimpleOptimizerCar for non-human model
+        human_car = car.SimpleOptimizerCar(dyn, [-0.13, 0., math.pi/2., 1.], color='red', T=T)
+        human_car.is_probing = False  # Human car doesn't probepy
+        world.cars.append(human_car)
+
+    # Robot car starts in adjacent lane
+    robot_car = car.BeliefOptimizerCar(dyn, [0.13, 0.1, math.pi/2., .8], color='yellow', T=T)
+    robot_car.is_probing = active  # Only probe in active mode
+    world.cars.append(robot_car)
+    
+    # Set world reference in cars
+    for c in world.cars:
+        c.world = world
+        
     world.cars[1].human = world.cars[0]
+    
+    # Set rewards based on driver type and active/passive behavior
     if model=='attentive':
+        # Attentive driver strongly avoids collisions
         world.cars[0].reward = world.features(theta_attentive, world.cars[0], 'linear')
     elif model=='distracted':
+        # Distracted driver barely responds to other cars
         world.cars[0].reward = world.features(theta_distracted1, world.cars[0], 'linear')
-    world.cars[1].add_model(lambda traj: world.features(theta_attentive, world.cars[0], traj))
-    world.cars[1].add_model(lambda traj: world.features(theta_distracted, world.cars[0], traj))
-    obj0 = world.cars[1].traj.total(world.features(theta_normal, world.cars[1], 'linear'))
+    
+    # Define robot behavior
+    if active:
+        # Active probing - allow lane intrusion
+        obj0 = world.cars[1].traj.total(world.features(theta_intrusive, world.cars[1], 'linear'))
+        
+        @feature.feature
+        def probe_objective(t, x, u):
+            # Encourage periodic lane intrusion
+            return -5.0 * ((x[0] - (-0.13))**2)  # Pull towards human's lane
+        
+        obj0 += probe_objective
+    else:
+        # Passive behavior - stay in lane
+        obj0 = world.cars[1].traj.total(world.features(theta_passive, world.cars[1], 'linear'))
+    
+    # Set final objective
     if model=='human':
         if active:
             world.cars[1].objective = lambda traj_h: 100.*world.cars[1].entropy(traj_h)+obj0
         else:
             world.cars[1].objective = obj0
     else:
-        with open('robot/S1.{}'.format('active' if active else 'passive')) as f:
+        with open('data/world1-trajectories.pickle', 'rb') as f:
             ur = pickle.load(f)[0][1]
         world.cars[1].objective = ur
         world.cars[1].dumb = True
+    
     return world
 
 def world1_active():

@@ -24,3 +24,8 @@ To visualize a saved scenario you can run
 - trajectory.py: Definition of trajectories.
 - world.py: This code contains different scenarios (each consisting of lanes/cars/etc.).
 - visualize.py: This contains the code for visualization (GUI).
+
+./run world1_active_attentive
+./run world1_active_distracted
+./run world1_passive_attentive
+./run world1_passive_distracted

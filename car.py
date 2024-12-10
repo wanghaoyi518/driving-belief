@@ -20,6 +20,7 @@ class Car(object):
         self.linear.x0.set_value(x0)
         self.color = color
         self.default_u = np.zeros(self.dyn.nu)
+        self.world = None  # Add reference to world
     def reset(self):
         self.x_hist = [self.data0['x0']]*self.T
         self.traj.x0.set_value(self.data0['x0'])
@@ -35,9 +36,23 @@ class Car(object):
         self.past.x0.set_value(self.x_hist[0])
         self.past.u[self.T-1].set_value(self.u)
     def move(self):
+        # Execute movement
         self.past_tick()
         self.traj.tick()
         self.linear.x0.set_value(self.traj.x0.get_value())
+        
+        # Store position if world exists
+        if self.world is not None:
+            # Get current position
+            pos = [self.x[0], self.x[1]]
+            
+            # Store position for first two cars (human and robot)
+            for i, car in enumerate(self.world.cars):
+                if car == self and i < 2:
+                    self.world.position_history[i].append(pos)
+                    # Debug print
+                    car_type = "Human" if i == 0 else "Robot"
+                    print(f"{car_type} at ({pos[0]:.3f}, {pos[1]:.3f})")
     @property
     def x(self):
         return self.traj.x0.get_value()
@@ -59,18 +74,24 @@ class UserControlledCar(Car):
 class SimpleOptimizerCar(Car):
     def __init__(self, *args, **vargs):
         Car.__init__(self, *args, **vargs)
-    @property
-    def reward(self):
-        return self._reward
-    @reward.setter
-    def reward(self, reward):
-        self._reward = reward
-        self.optimizer = None
+        self.bounds = [(-3., 3.), (-2., 2.)]  # Add steering and acceleration bounds
+        self.lane_deviation = 0.0  # Track intended lane deviation
+        
     def control(self, steer, gas):
         if self.optimizer is None:
             r = self.traj.total(self.reward)
             self.optimizer = utils.Maximizer(r, self.traj.u)
-        self.optimizer.maximize()
+            
+        # Add sinusoidal lane deviation for active probing
+        if hasattr(self, 'is_probing') and self.is_probing:
+            self.lane_deviation = 0.1 * np.sin(time.time() * 2.0)  # Oscillate ±0.1m
+            target_x = self.x[0] + self.lane_deviation
+            
+            # Adjust steering to achieve desired lateral position
+            steer_adjust = 0.5 * (target_x - self.x[0])
+            self.u = [steer_adjust, gas]
+        else:
+            self.optimizer.maximize(bounds=self.bounds)
 
 class NestedOptimizerCar(Car):
     def __init__(self, *args, **vargs):
@@ -108,6 +129,8 @@ class BeliefOptimizerCar(Car):
         Car.__init__(self, *args, **vargs)
         self.bounds = [(-3., 3.), (-2., 2.)]
         self.dumb = False
+        self.t = 0  # Initialize t at creation
+        self.optimizer = None
     @property
     def human(self):
         return self._human
@@ -139,11 +162,11 @@ class BeliefOptimizerCar(Car):
             log_p.set_value(val)
         if hasattr(self, 'normalize'):
             self.normalize()
-        self.t = 0
+        self.t = 0  # Also reset t here
         if self.dumb:
             self.useq = self.objective
     def move(self):
-        Car.move(self)
+        Car.move(self)  # Call parent class move() first
         self.t += 1
     def entropy(self, traj_h):
         new_log_ps = [traj_h.log_p(reward('traj'))+log_p for log_p, reward in zip(self.log_ps, self.rewards)]
@@ -187,7 +210,7 @@ class BeliefOptimizerCar(Car):
             if not self.dumb:
                 self.optimizer.maximize(bounds = self.bounds)
         for log_p in self.log_ps:
-            print '%.2f'%np.exp(log_p.get_value()),
+            print('%.2f' % np.exp(log_p.get_value()), end=' ')
         print
         #for traj in self.traj_hs:
         #    traj.x0.set_value(self.human.x)
