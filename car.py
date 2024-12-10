@@ -187,7 +187,7 @@ class BeliefOptimizerCar(Car):
             if not self.dumb:
                 self.optimizer.maximize(bounds = self.bounds)
         for log_p in self.log_ps:
-            print '%.2f'%np.exp(log_p.get_value()),
+            print('%.2f' % np.exp(log_p.get_value()), end=' ')
         print
         #for traj in self.traj_hs:
         #    traj.x0.set_value(self.human.x)

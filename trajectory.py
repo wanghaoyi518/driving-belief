@@ -15,7 +15,7 @@ class Trajectory(object):
         self.u = [utils.vector(dyn.nu) for t in range(self.T)]
         self.x = []
         z = self.x0
-        for t in range(T):
+        for t in range(self.T):
             z = dyn(z, self.u[t])
             self.x.append(z)
         self.next_x = th.function([], self.x[0])
@@ -23,7 +23,7 @@ class Trajectory(object):
         x0 = traj.x0.get_value()
         traj.x0.set_value(self.x0.get_value())
         self.x0.set_value(x0)
-        for t in range(T):
+        for t in range(self.T):
             u = traj.u[t].get_value()
             traj.u[t].set_value(self.u[t].get_value())
             self.u[t].set_value(u)
