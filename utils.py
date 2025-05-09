@@ -88,7 +88,7 @@ class NestedMaximizer(object):
             #if time.time()-t0>60:
             #    raise Exception('Too long')
             return self.f2_and_df2(x0)
-        print(self.f2_and_df2(x0))
+        print self.f2_and_df2(x0)
         opt = scipy.optimize.fmin_l_bfgs_b(f, x0=x0, bounds=B)
         diag = opt[2]['task']
         opt = opt[0]
@@ -142,5 +142,5 @@ if __name__ == '__main__':
     f2 = -((x1[0]-2.)**2+(x1[1]-4.)**2)-(x2[0]-6.)**2
     optimizer = NestedMaximizer(f1, [x1], f2, [x2])
     optimizer.maximize(bounds=[(0., 10.)])
-    print(x2.get_value())
-    print(x1.get_value())
+    print x2.get_value()
+    print x1.get_value()
